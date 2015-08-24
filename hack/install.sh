@@ -93,22 +93,6 @@ do_install() {
 			;;
 	esac
 
-	if command_exists docker; then
-		cat >&2 <<-'EOF'
-			Warning: the "docker" command appears to already exist on this system.
-
-			If you already have Docker installed, this script can cause trouble, which is
-			why we're displaying this warning and provide the opportunity to cancel the
-			installation.
-
-			If you installed the current Docker package using this script and are using it
-			again to update Docker, you can safely ignore this message.
-
-			You may press Ctrl+C now to abort this script.
-		EOF
-		( set -x; sleep 20 )
-	fi
-
 	user="$(id -un 2>/dev/null || true)"
 
 	sh_c='sh -c'
@@ -143,11 +127,10 @@ do_install() {
 		repo='experimental'
 	fi
 
-	# perform some very rudimentary platform detection
-	lsb_dist=''
-	dist_version=''
 	if command_exists lsb_release; then
-		lsb_dist="$(lsb_release -si)"
+		if [ -z "$lsb_dist" ]; then
+			lsb_dist="$(lsb_release -si)"
+		fi
 	fi
 	if [ -z "$lsb_dist" ] && [ -r /etc/lsb-release ]; then
 		lsb_dist="$(. /etc/lsb-release && echo "$DISTRIB_ID")"
@@ -172,50 +155,52 @@ do_install() {
 
 	lsb_dist="$(echo "$lsb_dist" | tr '[:upper:]' '[:lower:]')"
 
-	case "$lsb_dist" in
+	if [ -z "$dist_version" ]; then
+		case "$lsb_dist" in
 
-		ubuntu)
-			if command_exists lsb_release; then
-				dist_version="$(lsb_release --codename | cut -f2)"
-			fi
-			if [ -z "$dist_version" ] && [ -r /etc/lsb-release ]; then
-				dist_version="$(. /etc/lsb-release && echo "$DISTRIB_CODENAME")"
-			fi
-		;;
+			ubuntu)
+				if command_exists lsb_release; then
+					dist_version="$(lsb_release --codename | cut -f2)"
+				fi
+				if [ -z "$dist_version" ] && [ -r /etc/lsb-release ]; then
+					dist_version="$(. /etc/lsb-release && echo "$DISTRIB_CODENAME")"
+				fi
+			;;
 
-		debian)
-			dist_version="$(cat /etc/debian_version | sed 's/\/.*//' | sed 's/\..*//')"
-			case "$dist_version" in
-				8)
-					dist_version="jessie"
-				;;
-				7)
-					dist_version="wheezy"
-				;;
-			esac
-		;;
+			debian)
+				dist_version="$(cat /etc/debian_version | sed 's/\/.*//' | sed 's/\..*//')"
+				case "$dist_version" in
+					8)
+						dist_version="jessie"
+					;;
+					7)
+						dist_version="wheezy"
+					;;
+				esac
+			;;
 
-		oracleserver)
-			# need to switch lsb_dist to match yum repo URL
-			lsb_dist="oraclelinux"
-			dist_version="$(rpm -q --whatprovides redhat-release --queryformat "%{VERSION}\n" | sed 's/\/.*//' | sed 's/\..*//' | sed 's/Server*//')"
-		;;
+			oracleserver)
+				# need to switch lsb_dist to match yum repo URL
+				lsb_dist="oraclelinux"
+				dist_version="$(rpm -q --whatprovides redhat-release --queryformat "%{VERSION}\n" | sed 's/\/.*//' | sed 's/\..*//' | sed 's/Server*//')"
+			;;
 
-		fedora|centos)
-			dist_version="$(rpm -q --whatprovides redhat-release --queryformat "%{VERSION}\n" | sed 's/\/.*//' | sed 's/\..*//' | sed 's/Server*//')"
-		;;
+			fedora|centos)
+				dist_version="$(rpm -q --whatprovides redhat-release --queryformat "%{VERSION}\n" | sed 's/\/.*//' | sed 's/\..*//' | sed 's/Server*//')"
+			;;
 
-		*)
-			if command_exists lsb_release; then
-				dist_version="$(lsb_release --codename | cut -f2)"
-			fi
-			if [ -z "$dist_version" ] && [ -r /etc/os-release ]; then
-				dist_version="$(. /etc/os-release && echo "$VERSION_ID")"
-			fi
-		;;
+			*)
+				if command_exists lsb_release; then
+					dist_version="$(lsb_release --codename | cut -f2)"
+				fi
+				if [ -z "$dist_version" ] && [ -r /etc/os-release ]; then
+					dist_version="$(. /etc/os-release && echo "$VERSION_ID")"
+				fi
+			;;
 
 
-	esac
+		esac
+	fi
 
 	# Check if this is a forked Linux distro
 	check_forked
@@ -370,6 +355,27 @@ do_install() {
 	exit 1
 }
 
+parse_args() {
+
+	while [[ $# > 1 ]]
+	do
+		key="$1"
+		case $key in
+			-d|--distro)
+				lsb_dist=$(echo $2 | cut -d: -f1)
+				dist_version=$(echo $2 | cut -d: -f2)
+				shift
+			;;
+			*)
+				lsb_dist=''
+				distro_version=''
+			;;
+		esac
+		shift
+	done
+}
+
+parse_args $@
 # wrapped up in a function so that we have some protection against only getting
 # half the file during "curl | sh"
 do_install
